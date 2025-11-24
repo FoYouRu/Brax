@@ -527,6 +527,9 @@ def train(
         policy_optimizer=policy_optimizer,
         q_optimizer=q_optimizer,
     )
+  #=========================================수정부분
+    q_params_history = []
+    #=========================================== 
     del global_key
 #=========================================수정부분
     init_host_state = _unpmap(training_state)
@@ -617,6 +620,11 @@ def train(
             training_epoch_with_timing(
                 training_state, env_state, buffer_state, epoch_keys
             )
+        # =================== 추가: Q 파라미터 저장 =============
+        global q_params_history
+        q_params_history.append(_unpmap(training_state.q_params))
+        # ================================================================
+
         )
         current_step = int(_unpmap(training_state.env_steps))
 
@@ -717,6 +725,6 @@ def train(
     pmap.assert_is_replicated(training_state)
     logging.info('total steps: %s', total_steps)
     pmap.synchronize_hosts()
-    return (make_policy, params, metrics, q_init, q_final)
+    return (make_policy, params, metrics, q_init, q_final, q_params_history)
 
 
