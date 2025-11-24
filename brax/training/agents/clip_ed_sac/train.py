@@ -707,10 +707,16 @@ def train(
     params = _unpmap(
         (training_state.normalizer_params, training_state.policy_params)
     )
-
+#========================================================수정
+    final_host_state = _unpmap(training_state)
+    q_final = final_host_state.q_params
+#=============================================================
+    
     # If there was no mistakes the training_state should still be identical on all
     # devices.
     pmap.assert_is_replicated(training_state)
     logging.info('total steps: %s', total_steps)
     pmap.synchronize_hosts()
     return (make_policy, params, metrics)
+
+
