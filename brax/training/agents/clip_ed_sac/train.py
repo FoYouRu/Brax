@@ -528,7 +528,10 @@ def train(
         q_optimizer=q_optimizer,
     )
     del global_key
-
+#=========================================수정부분
+    init_host_state = _unpmap(training_state)
+    q_init = init_host_state.q_params
+#===========================================    
     if restore_checkpoint_path is not None:
         params = checkpoint.load(restore_checkpoint_path)
         training_state = training_state.replace(
