@@ -16,11 +16,11 @@
 
 See: https://arxiv.org/pdf/1812.05905.pdf
 """
-
+import pickle
 import functools
 import time
 from typing import Any, Callable, Dict, Optional, Tuple, Union
-
+import numpy as np  
 from absl import logging
 from brax import base
 from brax import envs
@@ -41,7 +41,6 @@ import jax
 import jax.numpy as jnp
 import optax
 
-SAVED_TRANSITIONS = []
 
 Metrics = types.Metrics
 Transition = types.Transition
@@ -425,23 +424,6 @@ def train(
         (training_state, _), metrics = jax.lax.scan(
             sgd_step, (training_state, training_key), transitions
         )
-        # ---------------------------------------------
-        if jax.process_index() == 0:  # 멀티 디바이스면 host(0번)만 기록
-            # 0번째 샘플만 저장 (배치 중 하나)
-            _obs = transitions.observation[0]
-            _act = transitions.action[0]
-            _next_obs = transitions.next_observation[0]
-
-            # next_action = policy(next_obs)
-            policy = make_policy((training_state.normalizer_params,
-                                  training_state.policy_params))
-            _next_act, _ = policy(_next_obs, jax.random.PRNGKey(0))
-
-            SAVED_TRANSITIONS.append((
-                _obs, _act, _next_obs, _next_act
-            ))
-        # ---------------------------------------------
-
 
         metrics['buffer_current_size'] = replay_buffer.size(
             buffer_state)  # pytype: disable=unsupported-operands  # lax-types
@@ -746,8 +728,47 @@ def train(
     pmap.synchronize_hosts()
 
     if jax.process_index() == 0:
+        # 1-env용 eval env 다시 생성 (wrap_env와 동일한 설정)
+        rollout_env = envs.training.wrap(
+            environment,
+            episode_length=episode_length,
+            action_repeat=action_repeat,
+            randomization_fn=None,
+        )
+
+        key = jax.random.PRNGKey(seed + 9999)
+        state = rollout_env.reset(key)
+
+        # 학습된 policy (host 파라미터 사용)
+        policy = make_policy(
+            (final_host_state.normalizer_params,
+             final_host_state.policy_params)
+        )
+
+        transitions_to_save = []
+        num_collect = 1000  # 원하는 개수만큼 수집 (원하면 줄이거나 늘려도 됨)
+
+        for _ in range(num_collect):
+            # 현재 상태에서 action 샘플링
+            key, subkey1, subkey2 = jax.random.split(key, 3)
+            action, _ = policy(state.obs, subkey1)
+            next_state = rollout_env.step(state, action)
+            next_obs = next_state.obs
+
+            # next_obs 에서의 next_action도 policy로 샘플링 (논문식 A 계산용)
+            next_action, _ = policy(next_obs, subkey2)
+
+            transitions_to_save.append((
+                np.array(state.obs),
+                np.array(action),
+                np.array(next_obs),
+                np.array(next_action),
+            ))
+
+            state = next_state
+
         with open("saved_transitions.pkl", "wb") as f:
-            pickle.dump(SAVED_TRANSITIONS, f)
+            pickle.dump(transitions_to_save, f)
     
     return (make_policy, params, metrics, q_init, q_final, q_params_history)
 
