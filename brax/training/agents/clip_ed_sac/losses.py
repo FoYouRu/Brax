@@ -28,19 +28,6 @@ import jax.numpy as jnp
 
 Transition = types.Transition
 
-COLLECT_TRANSITIONS = True
-GLOBAL_TRANSITIONS_BUF = []
-
-def record_transition(obs, act, next_obs, next_act):
-    if COLLECT_TRANSITIONS:
-        GLOBAL_TRANSITIONS_BUF.append((
-            jnp.array(obs),
-            jnp.array(act),
-            jnp.array(next_obs),
-            jnp.array(next_act)
-        ))
-
-
 # 추가: 선형 스케줄링 헬퍼 함수
 def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
@@ -122,14 +109,6 @@ def make_losses(
         next_action = parametric_action_distribution.sample_no_postprocessing(
             next_dist_params, key
         )
-
-        if COLLECT_TRANSITIONS:
-            record_transition(
-                transitions.observation,
-                transitions.action,
-                transitions.next_observation,
-                next_action,
-            )
         
         next_log_prob = parametric_action_distribution.log_prob(
             next_dist_params, next_action
