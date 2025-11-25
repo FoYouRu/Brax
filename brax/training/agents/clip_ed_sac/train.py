@@ -620,12 +620,12 @@ def train(
             training_epoch_with_timing(
                 training_state, env_state, buffer_state, epoch_keys
             )
-        # =================== 추가: Q 파라미터 저장 =============
-        global q_params_history
-        q_params_history.append(_unpmap(training_state.q_params))
-        # ================================================================
-
         )
+
+        # =================== 추가: Q 파라미터 저장 =============
+        q_params_history.append(_unpmap(training_state.q_params))
+        # ========================================================
+        
         current_step = int(_unpmap(training_state.env_steps))
 
         # --- [고침]: 리셋 로직 ---
