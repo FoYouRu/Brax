@@ -41,6 +41,8 @@ import jax
 import jax.numpy as jnp
 import optax
 
+SAVED_TRANSITIONS = []
+
 Metrics = types.Metrics
 Transition = types.Transition
 InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
@@ -423,6 +425,23 @@ def train(
         (training_state, _), metrics = jax.lax.scan(
             sgd_step, (training_state, training_key), transitions
         )
+        # ---------------------------------------------
+        if jax.process_index() == 0:  # 멀티 디바이스면 host(0번)만 기록
+            # 0번째 샘플만 저장 (배치 중 하나)
+            _obs = transitions.observation[0]
+            _act = transitions.action[0]
+            _next_obs = transitions.next_observation[0]
+
+            # next_action = policy(next_obs)
+            policy = make_policy((training_state.normalizer_params,
+                                  training_state.policy_params))
+            _next_act, _ = policy(_next_obs, jax.random.PRNGKey(0))
+
+            SAVED_TRANSITIONS.append((
+                _obs, _act, _next_obs, _next_act
+            ))
+        # ---------------------------------------------
+
 
         metrics['buffer_current_size'] = replay_buffer.size(
             buffer_state)  # pytype: disable=unsupported-operands  # lax-types
@@ -725,6 +744,11 @@ def train(
     pmap.assert_is_replicated(training_state)
     logging.info('total steps: %s', total_steps)
     pmap.synchronize_hosts()
+
+    if jax.process_index() == 0:
+        with open("saved_transitions.pkl", "wb") as f:
+            pickle.dump(SAVED_TRANSITIONS, f)
+    
     return (make_policy, params, metrics, q_init, q_final, q_params_history)
 
 
