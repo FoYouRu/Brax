@@ -16,11 +16,11 @@
 
 See: https://arxiv.org/pdf/1812.05905.pdf
 """
-import pickle
+
 import functools
 import time
 from typing import Any, Callable, Dict, Optional, Tuple, Union
-import numpy as np  
+
 from absl import logging
 from brax import base
 from brax import envs
@@ -40,7 +40,6 @@ import flax
 import jax
 import jax.numpy as jnp
 import optax
-
 
 Metrics = types.Metrics
 Transition = types.Transition
@@ -528,14 +527,8 @@ def train(
         policy_optimizer=policy_optimizer,
         q_optimizer=q_optimizer,
     )
-  #=========================================수정부분
-    q_params_history = []
-    #=========================================== 
     del global_key
-#=========================================수정부분
-    init_host_state = _unpmap(training_state)
-    q_init = init_host_state.q_params
-#===========================================    
+
     if restore_checkpoint_path is not None:
         params = checkpoint.load(restore_checkpoint_path)
         training_state = training_state.replace(
@@ -622,11 +615,6 @@ def train(
                 training_state, env_state, buffer_state, epoch_keys
             )
         )
-
-        # =================== 추가: Q 파라미터 저장 =============
-        q_params_history.append(_unpmap(training_state.q_params))
-        # ========================================================
-        
         current_step = int(_unpmap(training_state.env_steps))
 
         # --- [고침]: 리셋 로직 ---
@@ -716,60 +704,10 @@ def train(
     params = _unpmap(
         (training_state.normalizer_params, training_state.policy_params)
     )
-#========================================================수정
-    final_host_state = _unpmap(training_state)
-    q_final = final_host_state.q_params
-#=============================================================
-    
+
     # If there was no mistakes the training_state should still be identical on all
     # devices.
     pmap.assert_is_replicated(training_state)
     logging.info('total steps: %s', total_steps)
     pmap.synchronize_hosts()
-
-    if jax.process_index() == 0:
-        # 1-env용 eval env 다시 생성 (wrap_env와 동일한 설정)
-        rollout_env = envs.training.wrap(
-            environment,
-            episode_length=episode_length,
-            action_repeat=action_repeat,
-            randomization_fn=None,
-        )
-
-        key = jax.random.PRNGKey(seed + 9999)
-        state = rollout_env.reset(key)
-
-        # 학습된 policy (host 파라미터 사용)
-        policy = make_policy(
-            (final_host_state.normalizer_params,
-             final_host_state.policy_params)
-        )
-
-        transitions_to_save = []
-        num_collect = 1000  # 원하는 개수만큼 수집 (원하면 줄이거나 늘려도 됨)
-
-        for _ in range(num_collect):
-            # 현재 상태에서 action 샘플링
-            key, subkey1, subkey2 = jax.random.split(key, 3)
-            action, _ = policy(state.obs, subkey1)
-            next_state = rollout_env.step(state, action)
-            next_obs = next_state.obs
-
-            # next_obs 에서의 next_action도 policy로 샘플링 (논문식 A 계산용)
-            next_action, _ = policy(next_obs, subkey2)
-
-            transitions_to_save.append((
-                np.array(state.obs),
-                np.array(action),
-                np.array(next_obs),
-                np.array(next_action),
-            ))
-
-            state = next_state
-
-        with open("saved_transitions.pkl", "wb") as f:
-            pickle.dump(transitions_to_save, f)
-    
-    return (make_policy, params, metrics, q_init, q_final, q_params_history)
-
-
+    return (make_policy, params, metrics)
