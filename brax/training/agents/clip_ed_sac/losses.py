@@ -86,10 +86,13 @@ def make_losses(
             q_min: jnp.ndarray,
             q_max: jnp.ndarray,
     ) -> jnp.ndarray:
+        #==========================================================        
         q_old_action = q_network.apply(
-            normalizer_params, q_params, transitions.observation, transitions.action
+            normalizer_params, q_params, transitions.observation, transitions.action,
+            mutable=['intermediates'], capture_intermediates=True
         )
-        # --- ---
+        penultimate = inter_state['intermediates']['Dense_1']['__call__'][0]
+        #==========================================================        
         batch_min = jnp.min(q_old_action)
         batch_max = jnp.max(q_old_action)
         soft_update_min = batch_min
@@ -155,8 +158,11 @@ def make_losses(
         q_error *= jnp.expand_dims(1 - truncation, -1)
 
         q_loss = 0.5 * jnp.mean(jnp.square(q_error))
-        return q_loss, (new_q_min, new_q_max)
-
+        #==========================================================
+        return q_loss, {'new_q_min': new_q_min,
+                        'new_q_max': new_q_max,
+                        'penultimate': penultimate}
+        #==========================================================
     def actor_loss(
             policy_params: Params,
             normalizer_params: Any,
