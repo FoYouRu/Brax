@@ -87,12 +87,43 @@ def make_losses(
             q_max: jnp.ndarray,
     ) -> jnp.ndarray:
         #==========================================================        
-        q_old_action = q_network.apply(
-            normalizer_params, q_params, transitions.observation, transitions.action,
-            mutable=['intermediates'], capture_intermediates=True
+        (q_old_action, inter_state) = q_network.apply(
+            normalizer_params,
+            q_params,
+            transitions.observation,
+            transitions.action,
+            mutable=['intermediates'],
+            capture_intermediates=True
         )
-        penultimate = inter_state['intermediates']['Dense_1']['__call__'][0]
+        phi = inter_state['intermediates']['Dense_1']['__call__'][0]
+        #==========================================================
+        # --- ---
+        next_dist_params = policy_network.apply(
+            normalizer_params, policy_params, transitions.next_observation
+        )
+        next_action = parametric_action_distribution.sample_no_postprocessing(
+            next_dist_params, key
+        )
+        next_log_prob = parametric_action_distribution.log_prob(
+            next_dist_params, next_action
+        )
+        next_action = parametric_action_distribution.postprocess(next_action)
+
         #==========================================================        
+        (next_q, next_inter_state) = q_network.apply(
+            normalizer_params,
+            target_q_params,
+            transitions.next_observation,
+            next_action,
+            mutable=['intermediates'],
+            capture_intermediates=True
+        )
+        phi_next = next_inter_state['intermediates']['Dense_1']['__call__'][0]
+        #========================================================== 
+        term = discounting * phi_next - phi    # (batch, d)
+        outer = jnp.einsum('bi,bj->bij', phi, term)  
+        A_batch = jnp.mean(outer, axis=0)
+        #==========================================================
         batch_min = jnp.min(q_old_action)
         batch_max = jnp.max(q_old_action)
         soft_update_min = batch_min
@@ -106,24 +137,6 @@ def make_losses(
         new_q_max = jax.lax.stop_gradient(
             jnp.where(is_initial_step, hard_update_max, soft_update_max)
         )
-        # --- ---
-        next_dist_params = policy_network.apply(
-            normalizer_params, policy_params, transitions.next_observation
-        )
-        next_action = parametric_action_distribution.sample_no_postprocessing(
-            next_dist_params, key
-        )
-        next_log_prob = parametric_action_distribution.log_prob(
-            next_dist_params, next_action
-        )
-        next_action = parametric_action_distribution.postprocess(next_action)
-        next_q = q_network.apply(
-            normalizer_params,
-            target_q_params,
-            transitions.next_observation,
-            next_action,
-        )
-
         # next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
 
         # --- Offline penalty start ---
@@ -161,7 +174,9 @@ def make_losses(
         #==========================================================
         return q_loss, {'new_q_min': new_q_min,
                         'new_q_max': new_q_max,
-                        'penultimate': penultimate}
+                        'phi': phi,
+                        'phi_next': phi_next,
+                        'A_batch': A_batch }
         #==========================================================
     def actor_loss(
             policy_params: Params,
