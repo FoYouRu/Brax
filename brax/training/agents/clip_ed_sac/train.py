@@ -66,7 +66,7 @@ class TrainingState:
     normalizer_params: running_statistics.RunningStatisticsState
     q_min: jnp.ndarray
     q_max: jnp.ndarray
-
+    A: jnp.ndarray 
 
 def _unpmap(v):
     return jax.tree_util.tree_map(lambda x: x[0], v)
@@ -108,6 +108,7 @@ def _init_training_state(
         normalizer_params=normalizer_params,
         q_min=jnp.asarray(jnp.inf, dtype=jnp.float32),
         q_max=jnp.asarray(-jnp.inf, dtype=jnp.float32),
+        A=None
     )
     return jax.device_put_replicated(
         training_state, jax.local_devices()[:local_devices_to_use]
@@ -325,8 +326,15 @@ def train(
         )
         new_q_min = aux['new_q_min']
         new_q_max = aux['new_q_max']
-        penultimate = aux['penultimate']
-        
+        A_batch = aux['A_batch']
+        if A_prev is None:
+            A_new = A_batch
+        else:
+            decay = 0.99
+            A_new = decay * A_prev + (1 - decay) * A_batch
+        eigs = jnp.linalg.eigvals(A_new)
+        lambda_max = jnp.max(jnp.real(eigs))
+
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
@@ -350,7 +358,7 @@ def train(
             'alpha': jnp.exp(alpha_params),
             'q_clipping/q_min_observed': new_q_min,
             'q_clipping/q_max_observed': new_q_max,
-            'penultimate': penultimate
+            'lambda_max': lambda_max,
         }
 
         new_training_state = TrainingState(
@@ -366,6 +374,7 @@ def train(
             normalizer_params=training_state.normalizer_params,
             q_min=new_q_min,
             q_max=new_q_max,
+            A=A_new
         )
         return (new_training_state, key), metrics
 
