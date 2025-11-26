@@ -309,7 +309,7 @@ def train(
             optimizer_state=training_state.alpha_optimizer_state,
         )
         alpha = jnp.exp(training_state.alpha_params)
-        (critic_loss, (new_q_min, new_q_max)), q_params, q_optimizer_state = critic_update(
+        (critic_loss, aux), q_params, q_optimizer_state = critic_update(
             training_state.q_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -323,6 +323,10 @@ def train(
             training_state.q_max,
             optimizer_state=training_state.q_optimizer_state,
         )
+        new_q_min = aux['new_q_min']
+        new_q_max = aux['new_q_max']
+        penultimate = aux['penultimate']
+        
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
@@ -346,6 +350,7 @@ def train(
             'alpha': jnp.exp(alpha_params),
             'q_clipping/q_min_observed': new_q_min,
             'q_clipping/q_max_observed': new_q_max,
+            'penultimate': penultimate
         }
 
         new_training_state = TrainingState(
