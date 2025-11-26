@@ -327,6 +327,7 @@ def train(
         new_q_min = aux['new_q_min']
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
+        A_prev = training_state.A
         if A_prev is None:
             A_new = A_batch
         else:
