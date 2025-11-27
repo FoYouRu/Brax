@@ -33,7 +33,28 @@ Transition = types.Transition
 def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
     return start_value - fraction * (start_value - end_value)
+def _compute_phi(
+    q_params: Params,
+    normalizer_params: Any,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+) -> jnp.ndarray:
+    """첫 번째 critic의 첫 hidden layer pre-activation 을 φ로 계산."""
+    # 1) 관측값 정규화 (SAC에서 normalize_observations=True 인 경우 대응)
+    obs_norm = running_statistics.normalize(observations, normalizer_params)
 
+    # 2) obs, action concat: (B, obs+act)
+    h = jnp.concatenate([obs_norm, actions], axis=-1)
+
+    # 3) 첫 번째 critic(MLP_0)의 첫 hidden layer 파라미터 가져오기
+    #    q_params 구조: ['params']['QModule_0']['MLP_0']['hidden_0']['kernel'/'bias']
+    mlp0 = q_params['params']['QModule_0']['MLP_0']
+    w = mlp0['hidden_0']['kernel']  # (obs+act, hidden_dim)
+    b = mlp0['hidden_0']['bias']    # (hidden_dim,)
+
+    # 4) pre-activation: φ = h @ W + b
+    phi = h @ w + b                 # (B, hidden_dim)
+    return phi
 def make_losses(
         sac_network: sac_networks.SACNetworks,
         reward_scaling: float,
@@ -87,15 +108,21 @@ def make_losses(
             q_max: jnp.ndarray,
     ) -> jnp.ndarray:
         #==========================================================        
-        (q_old_action, inter_state) = q_network.apply(
+        # Q(s,a) 계산 (기존 방식)
+        q_old_action = q_network.apply(
             normalizer_params,
             q_params,
             transitions.observation,
             transitions.action,
-            mutable=['intermediates'],
-            capture_intermediates=True
         )
-        phi = inter_state['intermediates']['Dense_1']['__call__'][0]
+
+        # φ(s,a) = 첫 critic 첫 hidden layer pre-activation
+        phi = _compute_phi(
+            q_params,
+            normalizer_params,
+            transitions.observation,
+            transitions.action,
+        )
         #==========================================================
         # --- ---
         next_dist_params = policy_network.apply(
@@ -110,15 +137,21 @@ def make_losses(
         next_action = parametric_action_distribution.postprocess(next_action)
 
         #==========================================================        
-        (next_q, next_inter_state) = q_network.apply(
+        # target Q(s', a') 계산
+        next_q = q_network.apply(
             normalizer_params,
             target_q_params,
             transitions.next_observation,
             next_action,
-            mutable=['intermediates'],
-            capture_intermediates=True
         )
-        phi_next = next_inter_state['intermediates']['Dense_1']['__call__'][0]
+
+        # φ(s',a') 계산
+        phi_next = _compute_phi(
+            target_q_params,
+            normalizer_params,
+            transitions.next_observation,
+            next_action,
+        )
         #========================================================== 
         term = discounting * phi_next - phi    # (batch, d)
         outer = jnp.einsum('bi,bj->bij', phi, term)  
