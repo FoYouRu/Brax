@@ -485,10 +485,13 @@ def make_q_network(
 
   q_module = QModule(n_critics=n_critics)
 
-  def apply(processor_params, q_params, obs, actions):
+  # def apply(processor_params, q_params, obs, actions):
+  #   obs = preprocess_observations_fn(obs, processor_params)
+  #   return q_module.apply(q_params, obs, actions)
+  def apply(processor_params, q_params, obs, actions, **apply_kwargs):
     obs = preprocess_observations_fn(obs, processor_params)
-    return q_module.apply(q_params, obs, actions)
-
+    return q_module.apply(q_params, obs, actions, **apply_kwargs)
+      
   dummy_obs = jnp.zeros((1, obs_size))
   dummy_action = jnp.zeros((1, action_size))
   return FeedForwardNetwork(
