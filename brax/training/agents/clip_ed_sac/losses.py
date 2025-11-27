@@ -33,28 +33,25 @@ Transition = types.Transition
 def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
     return start_value - fraction * (start_value - end_value)
+    
 def _compute_phi(
     q_params: Params,
     normalizer_params: Any,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
 ) -> jnp.ndarray:
-    """첫 번째 critic의 첫 hidden layer pre-activation 을 φ로 계산."""
-    # 1) 관측값 정규화 (SAC에서 normalize_observations=True 인 경우 대응)
     obs_norm = running_statistics.normalize(observations, normalizer_params)
 
-    # 2) obs, action concat: (B, obs+act)
     h = jnp.concatenate([obs_norm, actions], axis=-1)
-
-    # 3) 첫 번째 critic(MLP_0)의 첫 hidden layer 파라미터 가져오기
-    #    q_params 구조: ['params']['QModule_0']['MLP_0']['hidden_0']['kernel'/'bias']
+    
     mlp0 = q_params['params']['QModule_0']['MLP_0']
-    w = mlp0['hidden_0']['kernel']  # (obs+act, hidden_dim)
-    b = mlp0['hidden_0']['bias']    # (hidden_dim,)
+    w = mlp0['hidden_0']['kernel'] 
+    b = mlp0['hidden_0']['bias']  
 
     # 4) pre-activation: φ = h @ W + b
-    phi = h @ w + b                 # (B, hidden_dim)
+    phi = h @ w + b              
     return phi
+    
 def make_losses(
         sac_network: sac_networks.SACNetworks,
         reward_scaling: float,
