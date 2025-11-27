@@ -109,20 +109,15 @@ def make_losses(
             q_max: jnp.ndarray,
     ) -> jnp.ndarray:
         #==========================================================        
-        # Q(s,a) 계산 (기존처럼)
-        q_old_action = q_network.apply(
+        (q_old_action, inter_state) = q_network.apply(
             normalizer_params,
             q_params,
             transitions.observation,
             transitions.action,
+            mutable=['intermediates'],
+            capture_intermediates=True
         )
-        # φ(s,a) = 첫 hidden layer pre-activation
-        phi = _compute_phi(
-            q_params,
-            normalizer_params,
-            transitions.observation,
-            transitions.action,
-        )
+        phi = inter_state['intermediates']['Dense_1']['__call__'][0]
         #==========================================================
         # --- ---
         next_dist_params = policy_network.apply(
@@ -137,20 +132,15 @@ def make_losses(
         next_action = parametric_action_distribution.postprocess(next_action)
 
         #==========================================================        
-        # Q(s',a') 계산
-        next_q = q_network.apply(
+        (next_q, next_inter_state) = q_network.apply(
             normalizer_params,
             target_q_params,
             transitions.next_observation,
             next_action,
+            mutable=['intermediates'],
+            capture_intermediates=True
         )
-        # φ(s',a')
-        phi_next = _compute_phi(
-            target_q_params,
-            normalizer_params,
-            transitions.next_observation,
-            next_action,
-        )
+        phi_next = next_inter_state['intermediates']['Dense_1']['__call__'][0]
         #========================================================== 
         term = discounting * phi_next - phi    # (batch, d)
         outer = jnp.einsum('bi,bj->bij', phi, term)  
