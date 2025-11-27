@@ -34,22 +34,31 @@ def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
     return start_value - fraction * (start_value - end_value)
     
-def _compute_phi(
-    q_params: Params,
-    normalizer_params: Any,
-    observations: jnp.ndarray,
-    actions: jnp.ndarray,
-) -> jnp.ndarray:
+def _compute_phi(q_params, normalizer_params, observations, actions):
+
     obs_norm = running_statistics.normalize(observations, normalizer_params)
-
     h = jnp.concatenate([obs_norm, actions], axis=-1)
-    
-    mlp0 = q_params['params']['QModule_0']['MLP_0']
-    w = mlp0['hidden_0']['kernel'] 
-    b = mlp0['hidden_0']['bias']  
 
-    # 4) pre-activation: φ = h @ W + b
-    phi = h @ w + b              
+    # ---- 자동 탐색 시작 ----
+    root = q_params["params"]
+
+    # QModule_* 찾기
+    qmodule_key = [k for k in root.keys() if k.startswith("QModule")][0]
+    qmodule = root[qmodule_key]
+
+    # MLP_* 찾기
+    mlp_key = [k for k in qmodule.keys() if k.startswith("MLP")][0]
+    mlp = qmodule[mlp_key]
+
+    # hidden_0 or Dense_0 찾기
+    h0_key = [k for k in mlp.keys() if k.startswith("hidden") or k.startswith("Dense")][0]
+    h0 = mlp[h0_key]
+
+    w = h0["kernel"]
+    b = h0["bias"]
+    # ---- 자동 탐색 끝 ----
+
+    phi = h @ w + b
     return phi
     
 def make_losses(
