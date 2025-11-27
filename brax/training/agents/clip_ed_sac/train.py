@@ -108,7 +108,7 @@ def _init_training_state(
         normalizer_params=normalizer_params,
         q_min=jnp.asarray(jnp.inf, dtype=jnp.float32),
         q_max=jnp.asarray(-jnp.inf, dtype=jnp.float32),
-        A=None
+        A=jnp.zeros((256, 256), dtype=jnp.float32)
     )
     return jax.device_put_replicated(
         training_state, jax.local_devices()[:local_devices_to_use]
@@ -328,11 +328,8 @@ def train(
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
         A_prev = training_state.A
-        if A_prev is None:
-            A_new = A_batch
-        else:
-            decay = 0.99
-            A_new = decay * A_prev + (1 - decay) * A_batch
+        decay = 0.99
+        A_new = decay * A_prev + (1 - decay) * A_batch
         eigs = jnp.linalg.eigvals(A_new)
         lambda_max = jnp.max(jnp.real(eigs))
 
