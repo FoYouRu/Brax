@@ -34,32 +34,53 @@ def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
     return start_value - fraction * (start_value - end_value)
     
-def _compute_phi(q_params, normalizer_params, observations, actions):
-
+def _compute_phi(
+    q_params: Params,
+    normalizer_params: Any,
+    observations: jnp.ndarray,
+    actions: jnp.ndarray,
+) -> jnp.ndarray:
+    # 1) 관측 정규화
     obs_norm = running_statistics.normalize(observations, normalizer_params)
+
+    # 2) obs, act concat
     h = jnp.concatenate([obs_norm, actions], axis=-1)
 
-    # ---- 자동 탐색 시작 ----
+    # 3) 파라미터 트리의 루트
     root = q_params["params"]
 
-    # QModule_* 찾기
-    qmodule_key = [k for k in root.keys() if k.startswith("QModule")][0]
-    qmodule = root[qmodule_key]
+    # 3-1) 현재 루트에 MLP_*가 바로 있는지 확인
+    mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
+    if not mlp_keys:
+        # 3-2) 없으면 한 단계 더 내려가서 MLP_* 찾기
+        for k, v in root.items():
+            if isinstance(v, dict) and any(kk.startswith("MLP") for kk in v.keys()):
+                root = v
+                mlp_keys = [kk for kk in v.keys() if kk.startswith("MLP")]
+                break
 
-    # MLP_* 찾기
-    mlp_key = [k for k in qmodule.keys() if k.startswith("MLP")][0]
-    mlp = qmodule[mlp_key]
+    if not mlp_keys:
+        raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
 
-    # hidden_0 or Dense_0 찾기
-    h0_key = [k for k in mlp.keys() if k.startswith("hidden") or k.startswith("Dense")][0]
-    h0 = mlp[h0_key]
+    mlp_key = mlp_keys[0]
+    mlp = root[mlp_key]
 
-    w = h0["kernel"]
-    b = h0["bias"]
-    # ---- 자동 탐색 끝 ----
+    # 4) 첫 번째 hidden 레이어 (이름이 hidden_0 이거나 Dense_0 인 경우 모두 대비)
+    h0_keys = [k for k in mlp.keys()
+               if k.startswith("hidden") or k.startswith("Dense")]
+    if not h0_keys:
+        raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
 
+    h0_key = h0_keys[0]
+    layer0 = mlp[h0_key]
+
+    w = layer0["kernel"]
+    b = layer0["bias"]
+
+    # 5) pre-activation φ
     phi = h @ w + b
     return phi
+
     
 def make_losses(
         sac_network: sac_networks.SACNetworks,
