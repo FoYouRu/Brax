@@ -327,10 +327,15 @@ def train(
         new_q_min = aux['new_q_min']
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
-        A_prev = training_state.A
-        decay = 0.99
-        A_new = decay * A_prev + (1 - decay) * A_batch
-        eigs = jnp.linalg.eigvals(A_new)
+        
+        # A_prev = training_state.A
+        # decay = 0.99
+        # A_new = decay * A_prev + (1 - decay) * A_batch
+        # eigs = jnp.linalg.eigvals(A_new)
+        
+        A_new = A_batch                    
+        eigs = jnp.linalg.eigvals(A_batch)
+        
         lambda_max = jnp.max(jnp.real(eigs))
 
         actor_loss, policy_params, policy_optimizer_state = actor_update(
