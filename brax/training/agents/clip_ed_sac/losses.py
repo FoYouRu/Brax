@@ -18,7 +18,7 @@ See: https://arxiv.org/pdf/1812.05905.pdf
 """
 
 from typing import Any
-from brax.training.acme import running_statistics
+from brax.training.acme import running_statistics  # 추가
 from brax.training import types
 from brax.training.agents.clip_ed_sac import networks as sac_networks
 from brax.training.types import Params
@@ -40,32 +40,21 @@ def _compute_phi(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
 ) -> jnp.ndarray:
-    # 1) 관측 정규화
     obs_norm = running_statistics.normalize(observations, normalizer_params)
-
-    # 2) obs, act concat
     h = jnp.concatenate([obs_norm, actions], axis=-1)
-
-    # 3) 파라미터 트리의 루트
     root = q_params["params"]
-
-    # 3-1) 현재 루트에 MLP_*가 바로 있는지 확인
     mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
     if not mlp_keys:
-        # 3-2) 없으면 한 단계 더 내려가서 MLP_* 찾기
         for k, v in root.items():
             if isinstance(v, dict) and any(kk.startswith("MLP") for kk in v.keys()):
                 root = v
                 mlp_keys = [kk for kk in v.keys() if kk.startswith("MLP")]
                 break
-
     if not mlp_keys:
         raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
-
     mlp_key = mlp_keys[0]
     mlp = root[mlp_key]
 
-    # 4) 첫 번째 hidden 레이어 (이름이 hidden_0 이거나 Dense_0 인 경우 모두 대비)
     h0_keys = [k for k in mlp.keys()
                if k.startswith("hidden") or k.startswith("Dense")]
     if not h0_keys:
@@ -77,7 +66,6 @@ def _compute_phi(
     w = layer0["kernel"]
     b = layer0["bias"]
 
-    # 5) pre-activation φ
     phi = h @ w + b
     return phi
 
@@ -134,16 +122,14 @@ def make_losses(
             q_min: jnp.ndarray,
             q_max: jnp.ndarray,
     ) -> jnp.ndarray:
-        #==========================================================        
-        # Q(s,a) 계산 (기존 방식)
+      
         q_old_action = q_network.apply(
             normalizer_params,
             q_params,
             transitions.observation,
             transitions.action,
         )
-
-        # φ(s,a) = 첫 critic 첫 hidden layer pre-activation
+        #==========================================================  
         phi = _compute_phi(
             q_params,
             normalizer_params,
@@ -151,7 +137,6 @@ def make_losses(
             transitions.action,
         )
         #==========================================================
-        # --- ---
         next_dist_params = policy_network.apply(
             normalizer_params, policy_params, transitions.next_observation
         )
@@ -162,17 +147,14 @@ def make_losses(
             next_dist_params, next_action
         )
         next_action = parametric_action_distribution.postprocess(next_action)
-
-        #==========================================================        
-        # target Q(s', a') 계산
+       
         next_q = q_network.apply(
             normalizer_params,
             target_q_params,
             transitions.next_observation,
             next_action,
         )
-
-        # φ(s',a') 계산
+        #========================================================== 
         phi_next = _compute_phi(
             target_q_params,
             normalizer_params,
