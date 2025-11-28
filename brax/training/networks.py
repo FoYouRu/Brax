@@ -488,6 +488,8 @@ def make_q_network(
   # def apply(processor_params, q_params, obs, actions):
   #   obs = preprocess_observations_fn(obs, processor_params)
   #   return q_module.apply(q_params, obs, actions)
+
+  # 전달 인자 추가
   def apply(processor_params, q_params, obs, actions, **apply_kwargs):
     obs = preprocess_observations_fn(obs, processor_params)
     return q_module.apply(q_params, obs, actions, **apply_kwargs)
