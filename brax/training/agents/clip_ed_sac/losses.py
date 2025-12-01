@@ -34,15 +34,58 @@ def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
     return start_value - fraction * (start_value - end_value)
     
+# def _compute_phi(
+#     q_params: Params,
+#     normalizer_params: Any,
+#     observations: jnp.ndarray,
+#     actions: jnp.ndarray,
+# ) -> jnp.ndarray:
+#     obs_norm = running_statistics.normalize(observations, normalizer_params)
+#     h = jnp.concatenate([obs_norm, actions], axis=-1)
+#     root = q_params["params"]
+#     mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
+    
+#     if not mlp_keys:
+#         for k, v in root.items():
+#             if isinstance(v, dict) and any(kk.startswith("MLP") for kk in v.keys()):
+#                 root = v
+#                 mlp_keys = [kk for kk in v.keys() if kk.startswith("MLP")]
+#                 break
+                
+#     if not mlp_keys:
+#         raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
+#     # mlp_key = mlp_keys[0]
+#     mlp = root[mlp_key[0]]
+
+#     h0_keys = [k for k in mlp.keys()
+#                if k.startswith("hidden") or k.startswith("Dense")]
+#     if not h0_keys:
+#         raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
+    
+#     # 첫번째 레이어 =====================
+#     h0_key = h0_keys[0]
+#     layer0 = mlp[h0_key]
+#     # ==================================
+
+#     w = layer0["kernel"]
+#     b = layer0["bias"]
+
+#     phi = h @ w + b
+#     return phi
+
 def _compute_phi(
     q_params: Params,
     normalizer_params: Any,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
-) -> jnp.ndarray:
+):
+
     obs_norm = running_statistics.normalize(observations, normalizer_params)
     h = jnp.concatenate([obs_norm, actions], axis=-1)
+
+    # 1) root 찾기
     root = q_params["params"]
+
     mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
     if not mlp_keys:
         for k, v in root.items():
@@ -50,25 +93,24 @@ def _compute_phi(
                 root = v
                 mlp_keys = [kk for kk in v.keys() if kk.startswith("MLP")]
                 break
-    if not mlp_keys:
-        raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
-    mlp_key = mlp_keys[0]
-    mlp = root[mlp_key]
 
-    h0_keys = [k for k in mlp.keys()
-               if k.startswith("hidden") or k.startswith("Dense")]
-    if not h0_keys:
-        raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
+    mlp = root[mlp_keys[0]]
 
-    # h0_key = h0_keys[0]
-    # layer0 = mlp[h0_key]
-    target_key = h0_keys[-2]
-    layer0 = mlp[target_key]
+    # --- hidden_0 ---
+    layer0 = mlp['hidden_0']
+    W0 = layer0['kernel']
+    b0 = layer0['bias']
 
-    w = layer0["kernel"]
-    b = layer0["bias"]
+    z0 = h @ W0 + b0             # preactivation 0
+    a0 = jax.nn.relu(z0)         # activation
 
-    phi = h @ w + b
+    # --- hidden_1 (우리가 원하는 φ) ---
+    layer1 = mlp['hidden_1']
+    W1 = layer1['kernel']
+    b1 = layer1['bias']
+
+    phi = a0 @ W1 + b1           # preactivation of second layer
+
     return phi
 
     
