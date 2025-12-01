@@ -60,8 +60,10 @@ def _compute_phi(
     if not h0_keys:
         raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
 
-    h0_key = h0_keys[0]
-    layer0 = mlp[h0_key]
+    # h0_key = h0_keys[0]
+    # layer0 = mlp[h0_key]
+    target_key = h0_keys[-2]
+    layer0 = mlp[target_key]
 
     w = layer0["kernel"]
     b = layer0["bias"]
