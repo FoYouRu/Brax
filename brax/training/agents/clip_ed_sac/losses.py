@@ -55,7 +55,7 @@ def _compute_phi(
     if not mlp_keys:
         raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
     mlp_key = mlp_keys[0]
-    mlp = root[mlp_key[0]]
+    mlp = root[mlp_key]
 
     h0_keys = [k for k in mlp.keys()
                if k.startswith("hidden") or k.startswith("Dense")]
