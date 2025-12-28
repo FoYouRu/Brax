@@ -336,8 +336,9 @@ def train(
         A_new = A_batch                    
         eigs = jnp.linalg.eigvals(A_batch)
         
-        lambda_max = jnp.max(jnp.real(eigs))
-
+        # lambda_max = jnp.max(jnp.real(eigs))
+        lambda_max = jnp.max(jnp.abs(jnp.real(eigs)))
+        
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
