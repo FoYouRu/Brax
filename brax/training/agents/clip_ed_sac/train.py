@@ -333,8 +333,13 @@ def train(
         # A_new = decay * A_prev + (1 - decay) * A_batch
         # eigs = jnp.linalg.eigvals(A_new)
         
-        A_new = A_batch                    
-        eigs = jnp.linalg.eigvals(A_batch)
+        # A_new = A_batch               
+        
+        I = jnp.eye(d, dtype=A_batch.dtype)
+        M = I + discounting * A_batch
+        eigs = jnp.linalg.eigvals(M)
+        
+        # eigs = jnp.linalg.eigvals(A_batch)
         
         # lambda_max = jnp.max(jnp.real(eigs))
         lambda_max = jnp.max(jnp.abs(jnp.real(eigs)))
