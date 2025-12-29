@@ -333,8 +333,9 @@ def train(
         # A_new = decay * A_prev + (1 - decay) * A_batch
         # eigs = jnp.linalg.eigvals(A_new)
         
-        # A_new = A_batch               
+        A_new = A_batch               
         
+        d = A_batch.shape[0]
         I = jnp.eye(d, dtype=A_batch.dtype)
         M = I + discounting * A_batch
         eigs = jnp.linalg.eigvals(M)
