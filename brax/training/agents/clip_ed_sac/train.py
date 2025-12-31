@@ -328,22 +328,34 @@ def train(
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
         
-        # A_prev = training_state.A
-        # decay = 0.99
-        # A_new = decay * A_prev + (1 - decay) * A_batch
-        # eigs = jnp.linalg.eigvals(A_new)
-        
         A_new = A_batch               
         
         d = A_batch.shape[0]
         I = jnp.eye(d, dtype=A_batch.dtype)
         M = I + discounting * A_batch
         eigs = jnp.linalg.eigvals(M)
-        
-        # eigs = jnp.linalg.eigvals(A_batch)
-        
         lambda_max = jnp.max(jnp.real(eigs))
-        # lambda_max = jnp.max(jnp.abs(jnp.real(eigs)))
+
+        # # ---- eig 계산 주기 설정 ----
+        # A_new = A_batch
+        # eig_every = 30  
+        # do_eig = (training_state.gradient_steps.lo % eig_every) == 0
+        
+        # d = A_batch.shape[0]
+        # I = jnp.eye(d, dtype=A_batch.dtype)
+        # M = I + discounting * A_batch
+        
+        # def eig_branch(_):
+        #     eigs = jnp.linalg.eigvals(M)
+        #     lam = jnp.max(jnp.real(eigs))
+        #     return lam
+        
+        # def skip_branch(_):
+        #     # 계산 안 할 때는 NaN(또는 이전값)로 채움
+        #     return jnp.asarray(jnp.nan, dtype=M.dtype)
+        
+        # lambda_max = jax.lax.cond(do_eig, eig_branch, skip_branch, operand=None)
+        # # --------------------------------
         
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
