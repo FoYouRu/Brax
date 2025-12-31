@@ -372,7 +372,7 @@ def train(
             lambda _: (training_state.lambda_real_max,
                        training_state.lambda_abs_max,
                       training_state.lambda_real_abs_max),
-                        training_state.lambda_imag_abs_max)
+                    training_state.lambda_imag_abs_max),
             operand=None)
         # --------------------------------
         
