@@ -66,7 +66,8 @@ class TrainingState:
     normalizer_params: running_statistics.RunningStatisticsState
     q_min: jnp.ndarray
     q_max: jnp.ndarray
-    A: jnp.ndarray 
+    A: jnp.ndarray
+    lambda_max: jnp.ndarray
 
 def _unpmap(v):
     return jax.tree_util.tree_map(lambda x: x[0], v)
@@ -80,6 +81,7 @@ def _init_training_state(
         alpha_optimizer: optax.GradientTransformation,
         policy_optimizer: optax.GradientTransformation,
         q_optimizer: optax.GradientTransformation,
+    
 ) -> TrainingState:
     """Inits the training state and replicates it over devices."""
     key_policy, key_q = jax.random.split(key)
@@ -108,7 +110,8 @@ def _init_training_state(
         normalizer_params=normalizer_params,
         q_min=jnp.asarray(jnp.inf, dtype=jnp.float32),
         q_max=jnp.asarray(-jnp.inf, dtype=jnp.float32),
-        A=jnp.zeros((256, 256), dtype=jnp.float32)
+        A=jnp.zeros((256, 256), dtype=jnp.float32),
+        lambda_max=jnp.asarray(jnp.nan, dtype=jnp.float32),
     )
     return jax.device_put_replicated(
         training_state, jax.local_devices()[:local_devices_to_use]
@@ -199,6 +202,9 @@ def train(
             -(num_timesteps - num_prefill_env_steps)
             // (num_evals_after_init * env_steps_per_actor_step)
     )
+    eig_every = int(num_training_steps_per_epoch) * int(grad_updates_per_step)
+    eig_every = max(eig_every, 1)  
+    logging.info('eig_every (per epoch) = %d', eig_every) 
 
     assert num_envs % device_count == 0
     env = environment
@@ -328,34 +334,30 @@ def train(
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
         
-        A_new = A_batch               
-        
-        d = A_batch.shape[0]
-        I = jnp.eye(d, dtype=A_batch.dtype)
-        M = I + discounting * A_batch
-        eigs = jnp.linalg.eigvals(M)
-        lambda_max = jnp.max(jnp.real(eigs))
-
-        # # ---- eig 계산 주기 설정 ----
-        # A_new = A_batch
-        # eig_every = 30  
-        # do_eig = (training_state.gradient_steps.lo % eig_every) == 0
+        # A_new = A_batch               
         
         # d = A_batch.shape[0]
         # I = jnp.eye(d, dtype=A_batch.dtype)
         # M = I + discounting * A_batch
+        # eigs = jnp.linalg.eigvals(M)
+        # lambda_max = jnp.max(jnp.real(eigs))
+
+        # ---- eig 계산 주기 설정 ----
+        A_new = A_batch
+        do_eig = ((training_state.gradient_steps.lo + 1) % eig_every) == 0
         
-        # def eig_branch(_):
-        #     eigs = jnp.linalg.eigvals(M)
-        #     lam = jnp.max(jnp.real(eigs))
-        #     return lam
+        d = A_batch.shape[0]
+        I = jnp.eye(d, dtype=A_batch.dtype)
+        M = I + discounting * A_batch
         
-        # def skip_branch(_):
-        #     # 계산 안 할 때는 NaN(또는 이전값)로 채움
-        #     return jnp.asarray(jnp.nan, dtype=M.dtype)
+        def eig_branch(_):
+            eigs = jnp.linalg.eigvals(M)
+            return jnp.max(jnp.real(eigs))
         
-        # lambda_max = jax.lax.cond(do_eig, eig_branch, skip_branch, operand=None)
-        # # --------------------------------
+        lambda_max = jax.lax.cond(do_eig, eig_branch,
+                                  lambda _: training_state.lambda_max,
+                                  operand=None)
+        # --------------------------------
         
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
@@ -396,7 +398,8 @@ def train(
             normalizer_params=training_state.normalizer_params,
             q_min=new_q_min,
             q_max=new_q_max,
-            A=A_new
+            A=A_new,
+            lambda_max=lambda_max
         )
         return (new_training_state, key), metrics
 
@@ -518,7 +521,7 @@ def train(
             (),
             length=num_training_steps_per_epoch,
         )
-        metrics = jax.tree_util.tree_map(jnp.mean, metrics)
+        metrics = jax.tree_util.tree_map(lambda x: x[-1], metrics)
         return training_state, env_state, buffer_state, metrics
 
     training_epoch = jax.pmap(training_epoch, axis_name=_PMAP_AXIS_NAME)
