@@ -67,7 +67,8 @@ class TrainingState:
     q_min: jnp.ndarray
     q_max: jnp.ndarray
     A: jnp.ndarray
-    lambda_max: jnp.ndarray
+    lambda_abs_max: jnp.ndarray
+    lambda_real_max: jnp.ndarray
 
 def _unpmap(v):
     return jax.tree_util.tree_map(lambda x: x[0], v)
@@ -111,7 +112,8 @@ def _init_training_state(
         q_min=jnp.asarray(jnp.inf, dtype=jnp.float32),
         q_max=jnp.asarray(-jnp.inf, dtype=jnp.float32),
         A=jnp.zeros((256, 256), dtype=jnp.float32),
-        lambda_max=jnp.asarray(jnp.nan, dtype=jnp.float32),
+        lambda_real_max=jnp.asarray(jnp.nan, dtype=jnp.float32),
+        lambda_abs_max=jnp.asarray(jnp.nan, dtype=jnp.float32)
     )
     return jax.device_put_replicated(
         training_state, jax.local_devices()[:local_devices_to_use]
@@ -352,11 +354,17 @@ def train(
         
         def eig_branch(_):
             eigs = jnp.linalg.eigvals(M)
-            return jnp.max(jnp.real(eigs))
+            lambda_real_max = jnp.max(jnp.real(eigs))
+            lambda_abs_max  = jnp.max(jnp.abs(eigs))   
+
+            return lambda_real_max, lambda_abs_max
         
-        lambda_max = jax.lax.cond(do_eig, eig_branch,
-                                  lambda _: training_state.lambda_max,
-                                  operand=None)
+        lambda_real_max, lambda_abs_max = jax.lax.cond(
+            do_eig,
+            eig_branch,
+            lambda _: (training_state.lambda_real_max,
+                       training_state.lambda_abs_max),
+            operand=None)
         # --------------------------------
         
         actor_loss, policy_params, policy_optimizer_state = actor_update(
@@ -382,7 +390,8 @@ def train(
             'alpha': jnp.exp(alpha_params),
             'q_clipping/q_min_observed': new_q_min,
             'q_clipping/q_max_observed': new_q_max,
-            'lambda_max': lambda_max,
+            'eig/lambda_real_max': lambda_real_max,
+            'eig/lambda_abs_max': lambda_abs_max
         }
 
         new_training_state = TrainingState(
@@ -399,7 +408,8 @@ def train(
             q_min=new_q_min,
             q_max=new_q_max,
             A=A_new,
-            lambda_max=lambda_max
+            lambda_real_max=lambda_real_max,
+            lambda_abs_max=lambda_abs_max
         )
         return (new_training_state, key), metrics
 
