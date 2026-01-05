@@ -62,8 +62,7 @@ def _compute_phi(
     if not mlp_keys:
         raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
         
-    # mlp_key = mlp_keys[0]
-    mlp_key = sorted(mlp_keys, key=_idx)[0]
+    mlp_key = mlp_keys[0]
     mlp = root[mlp_key]
 
     h0_keys = [k for k in mlp.keys()
@@ -72,8 +71,7 @@ def _compute_phi(
         raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
     
     # 첫번째 레이어 =====================
-    # h0_key = h0_keys[0]
-    h0_key = sorted(h0_keys, key=_idx)[0]
+    h0_key = h0_keys[0]
     layer0 = mlp[h0_key]
     # ==================================
 
