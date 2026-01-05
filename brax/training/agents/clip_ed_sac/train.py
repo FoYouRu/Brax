@@ -356,7 +356,7 @@ def train(
         
         d = A_batch.shape[0]
         I = jnp.eye(d, dtype=A_batch.dtype)
-        M = I + learning_rate * A_batch
+        M = I + 0.3 * A_batch
         
         def eig_branch(_):
             eigs = jnp.linalg.eigvals(M)
