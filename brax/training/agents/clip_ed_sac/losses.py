@@ -25,9 +25,13 @@ from brax.training.types import Params
 from brax.training.types import PRNGKey
 import jax
 import jax.numpy as jnp
+import re
 
 Transition = types.Transition
 
+def _idx(k: str) -> int:
+    m = re.search(r'(\d+)$', k)
+    return int(m.group(1)) if m else 10**9
 
 # 추가: 선형 스케줄링 헬퍼 함수
 def linear_schedule(current_step, start_value, end_value, total_steps):
@@ -41,7 +45,8 @@ def _compute_phi(
     actions: jnp.ndarray,
     normalize_obs: bool
 ) -> jnp.ndarray:
-    obs_proc = running_statistics.normalize(observations, normalizer_params) if normalize_obs else observations
+    obs_norm = (running_statistics.normalize(observations, normalizer_params) 
+                if normalize_obs else observations)
     # obs_norm = running_statistics.normalize(observations, normalizer_params)
     h = jnp.concatenate([obs_norm, actions], axis=-1)
     root = q_params["params"]
@@ -56,7 +61,9 @@ def _compute_phi(
                 
     if not mlp_keys:
         raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
-    mlp_key = mlp_keys[0]
+        
+    # mlp_key = mlp_keys[0]
+    mlp_key = sorted(mlp_keys, key=_idx)[0]
     mlp = root[mlp_key]
 
     h0_keys = [k for k in mlp.keys()
@@ -65,7 +72,8 @@ def _compute_phi(
         raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
     
     # 첫번째 레이어 =====================
-    h0_key = h0_keys[0]
+    # h0_key = h0_keys[0]
+    h0_key = sorted(h0_keys, key=_idx)[0]
     layer0 = mlp[h0_key]
     # ==================================
 
@@ -121,6 +129,7 @@ def make_losses(
         reward_scaling: float,
         discounting: float,
         action_size: int,
+        normalize_observations: bool,
         start_beta: float = 0.5,
         end_beta: float = 0.0,
         anneal_beta: float = 1e5,
@@ -128,7 +137,7 @@ def make_losses(
         end_clip: float = 50,
         anneal_clip: float = 1e5,
         auto_clip: bool = True,
-        tau_q_range: float = 0.01
+        tau_q_range: float = 0.01,
 ):
     """Creates the SAC losses."""
 
@@ -181,6 +190,7 @@ def make_losses(
             normalizer_params,
             transitions.observation,
             transitions.action,
+            normalize_observations
         )
         #==========================================================
         next_dist_params = policy_network.apply(
@@ -206,6 +216,7 @@ def make_losses(
             normalizer_params,
             transitions.next_observation,
             next_action,
+            normalize_observations
         )
         #========================================================== 
         gamma = transitions.discount * discounting            # (B,)
