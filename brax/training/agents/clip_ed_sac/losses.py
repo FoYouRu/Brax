@@ -25,13 +25,9 @@ from brax.training.types import Params
 from brax.training.types import PRNGKey
 import jax
 import jax.numpy as jnp
-import re
 
 Transition = types.Transition
 
-# def _idx(k: str) -> int:
-#     m = re.search(r'(\d+)$', k)
-#     return int(m.group(1)) if m else 10**9
 
 # 추가: 선형 스케줄링 헬퍼 함수
 def linear_schedule(current_step, start_value, end_value, total_steps):
@@ -44,8 +40,6 @@ def _compute_phi(
     observations: jnp.ndarray,
     actions: jnp.ndarray,
 ) -> jnp.ndarray:
-    # obs_norm = (running_statistics.normalize(observations, normalizer_params) 
-    #             if normalize_obs else observations)
     obs_norm = running_statistics.normalize(observations, normalizer_params)
     h = jnp.concatenate([obs_norm, actions], axis=-1)
     root = q_params["params"]
@@ -60,7 +54,6 @@ def _compute_phi(
                 
     if not mlp_keys:
         raise KeyError(f"MLP_* key not found in q_params['params']: got keys={list(root.keys())}")
-        
     mlp_key = mlp_keys[0]
     mlp = root[mlp_key]
 
@@ -133,7 +126,7 @@ def make_losses(
         end_clip: float = 50,
         anneal_clip: float = 1e5,
         auto_clip: bool = True,
-        tau_q_range: float = 0.01,
+        tau_q_range: float = 0.01
 ):
     """Creates the SAC losses."""
 
@@ -212,7 +205,7 @@ def make_losses(
             transitions.next_observation,
             next_action,
         )
-        #==========================================================  
+        #========================================================== 
         term = discounting * phi_next - phi    # (batch, d)
         outer = jnp.einsum('bi,bj->bij', phi, term)  
         A_batch = jnp.mean(outer, axis=0)
