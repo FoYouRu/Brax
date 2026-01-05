@@ -287,7 +287,6 @@ def train(
         reward_scaling=reward_scaling,
         discounting=discounting,
         action_size=action_size,
-        normalize_observations=normalize_observations,
         # 추가: make_losses에 새로운 하이퍼파라미터 전달
         start_beta = start_beta,
         end_beta = end_beta,
@@ -356,7 +355,7 @@ def train(
         
         d = A_batch.shape[0]
         I = jnp.eye(d, dtype=A_batch.dtype)
-        M = I + 0.3 * A_batch
+        M = I + 0.1 * A_batch
         
         def eig_branch(_):
             eigs = jnp.linalg.eigvals(M)
