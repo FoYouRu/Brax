@@ -29,9 +29,9 @@ import re
 
 Transition = types.Transition
 
-def _idx(k: str) -> int:
-    m = re.search(r'(\d+)$', k)
-    return int(m.group(1)) if m else 10**9
+# def _idx(k: str) -> int:
+#     m = re.search(r'(\d+)$', k)
+#     return int(m.group(1)) if m else 10**9
 
 # 추가: 선형 스케줄링 헬퍼 함수
 def linear_schedule(current_step, start_value, end_value, total_steps):
