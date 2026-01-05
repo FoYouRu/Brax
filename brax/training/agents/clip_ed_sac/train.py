@@ -287,6 +287,7 @@ def train(
         reward_scaling=reward_scaling,
         discounting=discounting,
         action_size=action_size,
+        normalize_observations=normalize_observations,
         # 추가: make_losses에 새로운 하이퍼파라미터 전달
         start_beta = start_beta,
         end_beta = end_beta,
