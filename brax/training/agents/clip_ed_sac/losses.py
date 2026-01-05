@@ -206,7 +206,9 @@ def make_losses(
             next_action,
         )
         #========================================================== 
-        term = discounting * phi_next - phi    # (batch, d)
+        gamma = transitions.discount * discounting            # (B,)
+        term  = gamma[:, None] * phi_next - phi  
+        # term = discounting * phi_next - phi    # (batch, d)
         outer = jnp.einsum('bi,bj->bij', phi, term)  
         A_batch = jnp.mean(outer, axis=0)
         #==========================================================
