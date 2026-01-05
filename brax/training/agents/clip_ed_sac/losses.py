@@ -39,8 +39,10 @@ def _compute_phi(
     normalizer_params: Any,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
+    normalize_obs: bool
 ) -> jnp.ndarray:
-    obs_norm = running_statistics.normalize(observations, normalizer_params)
+    obs_proc = running_statistics.normalize(observations, normalizer_params) if normalize_obs else observations
+    # obs_norm = running_statistics.normalize(observations, normalizer_params)
     h = jnp.concatenate([obs_norm, actions], axis=-1)
     root = q_params["params"]
     mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
