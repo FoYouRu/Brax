@@ -43,11 +43,10 @@ def _compute_phi(
     normalizer_params: Any,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
-    normalize_obs: bool
 ) -> jnp.ndarray:
-    obs_norm = (running_statistics.normalize(observations, normalizer_params) 
-                if normalize_obs else observations)
-    # obs_norm = running_statistics.normalize(observations, normalizer_params)
+    # obs_norm = (running_statistics.normalize(observations, normalizer_params) 
+    #             if normalize_obs else observations)
+    obs_norm = running_statistics.normalize(observations, normalizer_params)
     h = jnp.concatenate([obs_norm, actions], axis=-1)
     root = q_params["params"]
     mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
@@ -127,7 +126,6 @@ def make_losses(
         reward_scaling: float,
         discounting: float,
         action_size: int,
-        normalize_observations: bool,
         start_beta: float = 0.5,
         end_beta: float = 0.0,
         anneal_beta: float = 1e5,
@@ -188,7 +186,6 @@ def make_losses(
             normalizer_params,
             transitions.observation,
             transitions.action,
-            normalize_observations
         )
         #==========================================================
         next_dist_params = policy_network.apply(
@@ -214,10 +211,9 @@ def make_losses(
             normalizer_params,
             transitions.next_observation,
             next_action,
-            normalize_observations
         )
         #========================================================== 
-        gamma = transitions.discount * discounting            # (B,)
+        gamma = transitions.discount * discounting        
         term  = gamma[:, None] * phi_next - phi  
         # term = discounting * phi_next - phi    # (batch, d)
         outer = jnp.einsum('bi,bj->bij', phi, term)  
