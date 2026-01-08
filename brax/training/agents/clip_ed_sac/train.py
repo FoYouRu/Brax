@@ -67,7 +67,7 @@ class TrainingState:
     q_min: jnp.ndarray
     q_max: jnp.ndarray
     A: jnp.ndarray
-    lambda_real_abs_max: jnp.ndarray
+    lambda_real_min: jnp.ndarray
     lambda_real_max: jnp.ndarray
     
 
@@ -114,7 +114,7 @@ def _init_training_state(
         q_max=jnp.asarray(-jnp.inf, dtype=jnp.float32),
         A=jnp.zeros((256, 256), dtype=jnp.float32),
         lambda_real_max=jnp.asarray(jnp.nan, dtype=jnp.float32),
-        lambda_real_abs_max=jnp.asarray(jnp.nan, dtype=jnp.float32)
+        lambda_real_min=jnp.asarray(jnp.nan, dtype=jnp.float32)
 
     )
     return jax.device_put_replicated(
@@ -337,14 +337,6 @@ def train(
         new_q_min = aux['new_q_min']
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
-        
-        # A_new = A_batch               
-        
-        # d = A_batch.shape[0]
-        # I = jnp.eye(d, dtype=A_batch.dtype)
-        # M = I + discounting * A_batch
-        # eigs = jnp.linalg.eigvals(M)
-        # lambda_max = jnp.max(jnp.real(eigs))
 
         # ---- eig 계산 주기 설정 ----
         A_new = A_batch
@@ -358,15 +350,15 @@ def train(
         def eig_branch(_):
             eigs = jnp.linalg.eigvals(M)
             lambda_real_max = jnp.max(jnp.real(eigs)) 
-            lambda_real_abs_max = jnp.max(jnp.abs(jnp.real(eigs)))
+            lambda_real_min = jnp.min(jnp.real(eigs))
 
-            return lambda_real_max, lambda_real_abs_max
+            return lambda_real_max, lambda_real_min
         
-        lambda_real_max, lambda_real_abs_max = jax.lax.cond(
+        lambda_real_max, lambda_real_min = jax.lax.cond(
             do_eig,
             eig_branch,
             lambda _: (training_state.lambda_real_max,
-                       training_state.lambda_real_abs_max
+                       training_state.lambda_real_min
                       ),
             operand=None)
         # --------------------------------
@@ -395,7 +387,7 @@ def train(
             'q_clipping/q_min_observed': new_q_min,
             'q_clipping/q_max_observed': new_q_max,
             'eig/lambda_real_max': lambda_real_max,
-            'eig/lambda_real_abs_max': lambda_real_abs_max
+            'eig/lambda_real_min': lambda_real_min
         }
 
         new_training_state = TrainingState(
@@ -413,7 +405,7 @@ def train(
             q_max=new_q_max,
             A=A_new,
             lambda_real_max=lambda_real_max,
-            lambda_real_abs_max=lambda_real_abs_max
+            lambda_real_abs_max=lambda_real_min
         )
         return (new_training_state, key), metrics
 
