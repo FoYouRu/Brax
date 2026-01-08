@@ -405,7 +405,7 @@ def train(
             q_max=new_q_max,
             A=A_new,
             lambda_real_max=lambda_real_max,
-            lambda_real_abs_max=lambda_real_min
+            lambda_real_min=lambda_real_min
         )
         return (new_training_state, key), metrics
 
