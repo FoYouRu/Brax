@@ -419,7 +419,8 @@ def train(
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
-            training_state.q_params,
+            # training_state.q_params,
+            q_params,  #이것도 나중에 고쳐야함. 0112. 원본은 윗줄
             alpha,
             transitions,
             key_actor,
