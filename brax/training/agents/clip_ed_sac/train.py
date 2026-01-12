@@ -287,8 +287,33 @@ def train(
         dummy_data_sample=dummy_transition,
         sample_batch_size=batch_size * grad_updates_per_step // device_count,
     )
-
-    alpha_loss, critic_loss, actor_loss = sac_losses.make_losses(
+# =================================0112 변경전======================================
+    # alpha_loss, critic_loss, actor_loss = sac_losses.make_losses(
+    #     sac_network=sac_network,
+    #     reward_scaling=reward_scaling,
+    #     discounting=discounting,
+    #     action_size=action_size,
+    #     # 추가: make_losses에 새로운 하이퍼파라미터 전달
+    #     start_beta = start_beta,
+    #     end_beta = end_beta,
+    #     anneal_beta = anneal_beta,
+    #     start_clip = start_clip,
+    #     end_clip = end_clip,
+    #     anneal_clip = anneal_clip,
+    #     auto_clip = auto_clip,
+    #     tau_q_range = tau_q_range,
+    # )
+    # alpha_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+    #     alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
+    # )
+    # critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+    #     critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True
+    # )
+    # actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+    #     actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
+    # )
+# ================================================밑에는 변경후=====================================================
+    alpha_loss_fn, critic_loss_fn, actor_loss_fn = sac_losses.make_losses(
         sac_network=sac_network,
         reward_scaling=reward_scaling,
         discounting=discounting,
@@ -304,23 +329,29 @@ def train(
         tau_q_range = tau_q_range,
     )
     alpha_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
-    )
-    critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True
+        alpha_loss_fn, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
     actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
+        actor_loss_fn, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
-
+    # ====================================================================================
     def sgd_step(
             carry: Tuple[TrainingState, PRNGKey], transitions: Transition
     ) -> Tuple[Tuple[TrainingState, PRNGKey], Metrics]:
         training_state, key = carry
 
         key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
-
-        alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
+# ================================원본0112=====================================
+        # alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
+        #     training_state.alpha_params,
+        #     training_state.policy_params,
+        #     training_state.normalizer_params,
+        #     transitions,
+        #     key_alpha,
+        #     optimizer_state=training_state.alpha_optimizer_state,
+        # )
+ # =================위위에가 원본==========================================
+        alpha_loss_val, alpha_params, alpha_optimizer_state = alpha_update(
             training_state.alpha_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -328,8 +359,9 @@ def train(
             key_alpha,
             optimizer_state=training_state.alpha_optimizer_state,
         )
+#====================================================================== 
         # alpha = jnp.exp(training_state.alpha_params)  
-        alpha = jnp.exp(alpha_params)      #이것도 나중에 바꿔야함 0112 윗줄이 원본임
+        alpha = jnp.exp(alpha_params)      #이것도 나중에 바꿔야함 0112 윗줄이 원본임 423줄도 주석해제해야함
         # ================================원본0112=====================================
         # (critic_loss, aux), q_params, q_optimizer_state = critic_update(
         #     training_state.q_params,
@@ -351,7 +383,7 @@ def train(
         # ============================================================================
         # ================================0112========================================
         # ----- critic loss + grads -----
-        (critic_loss_val, aux), grads = jax.value_and_grad(critic_loss, has_aux=True)(
+        (critic_loss_val, aux), grads = jax.value_and_grad(critic_loss_fn, has_aux=True)(
             training_state.q_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -388,7 +420,7 @@ def train(
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
         
-        critic_loss = critic_loss_val
+        # critic_loss = critic_loss_val
         # ============================================================================
 
         # ---- eig 계산 주기 설정 ----
@@ -415,8 +447,8 @@ def train(
                       ),
             operand=None)
         # --------------------------------
-        
-        actor_loss, policy_params, policy_optimizer_state = actor_update(
+        actor_loss_val, policy_params, policy_optimizer_state = actor_update(
+        # actor_loss, policy_params, policy_optimizer_state = actor_update( 이게 원본임 0112
             training_state.policy_params,
             training_state.normalizer_params,
             # training_state.q_params,
@@ -434,9 +466,9 @@ def train(
         )
 
         metrics = {
-            'critic_loss': critic_loss,
-            'actor_loss': actor_loss,
-            'alpha_loss': alpha_loss,
+            'critic_loss': critic_loss_val, #여기부터 밑에 val은 원본으로 돌릴때 지워야함 0112
+            'actor_loss': actor_loss_val,
+            'alpha_loss': alpha_loss_val,
             'alpha': jnp.exp(alpha_params),
             'q_clipping/q_min_observed': new_q_min,
             'q_clipping/q_max_observed': new_q_max,
