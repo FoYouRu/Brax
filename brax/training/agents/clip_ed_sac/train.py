@@ -49,6 +49,15 @@ ReplayBufferState = Any
 
 _PMAP_AXIS_NAME = 'i'
 
+# ================================0112===================================
+def tree_l2norm(tree):
+    leaves = jax.tree_util.tree_leaves(tree)
+    sq = [jnp.sum(jnp.square(x)) for x in leaves]
+    return jnp.sqrt(jnp.sum(jnp.stack(sq)))
+
+def tree_sub(a, b):
+    return jax.tree_util.tree_map(lambda x, y: x - y, a, b)
+# =====================================================================
 
 @flax.struct.dataclass
 class TrainingState:
@@ -319,8 +328,30 @@ def train(
             key_alpha,
             optimizer_state=training_state.alpha_optimizer_state,
         )
-        alpha = jnp.exp(training_state.alpha_params)
-        (critic_loss, aux), q_params, q_optimizer_state = critic_update(
+        # alpha = jnp.exp(training_state.alpha_params)  
+        alpha = jnp.exp(alpha_params)      #이것도 나중에 바꿔야함 0112 윗줄이 원본임
+        # ================================원본0112=====================================
+        # (critic_loss, aux), q_params, q_optimizer_state = critic_update(
+        #     training_state.q_params,
+        #     training_state.policy_params,
+        #     training_state.normalizer_params,
+        #     training_state.target_q_params,
+        #     alpha,
+        #     transitions,
+        #     key_critic,
+        #     # additional variables
+        #     training_state.gradient_steps,
+        #     training_state.q_min,
+        #     training_state.q_max,
+        #     optimizer_state=training_state.q_optimizer_state,
+        # )
+        # new_q_min = aux['new_q_min']
+        # new_q_max = aux['new_q_max']
+        # A_batch = aux['A_batch']
+        # ============================================================================
+        # ================================0112========================================
+        # ----- critic loss + grads -----
+        (critic_loss_val, aux), grads = jax.value_and_grad(critic_loss, has_aux=True)(
             training_state.q_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -328,15 +359,37 @@ def train(
             alpha,
             transitions,
             key_critic,
-            # additional variables
             training_state.gradient_steps,
             training_state.q_min,
             training_state.q_max,
-            optimizer_state=training_state.q_optimizer_state,
         )
+
+        # pmap 환경에서 device 평균 (grads/aux/loss 모두)
+        grads = jax.lax.pmean(grads, axis_name=_PMAP_AXIS_NAME)
+        aux = jax.lax.pmean(aux, axis_name=_PMAP_AXIS_NAME)
+        critic_loss_val = jax.lax.pmean(critic_loss_val, axis_name=_PMAP_AXIS_NAME)
+        
+        # ----- adam update -----
+        updates, q_optimizer_state = q_optimizer.update(
+            grads,
+            training_state.q_optimizer_state,
+            params=training_state.q_params,
+        )
+        q_params = optax.apply_updates(training_state.q_params, updates)
+
+        # ----- effective step (scalar) -----
+        delta = tree_sub(q_params, training_state.q_params)     # Δθ
+        g_norm = tree_l2norm(grads) + 1e-12
+        d_norm = tree_l2norm(delta)
+        eta_eff = jax.lax.stop_gradient(d_norm / g_norm)
+        
+        # aux unpack
         new_q_min = aux['new_q_min']
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
+        
+        critic_loss = critic_loss_val
+        # ============================================================================
 
         # ---- eig 계산 주기 설정 ----
         A_new = A_batch
@@ -344,7 +397,7 @@ def train(
         
         d = A_batch.shape[0]
         I = jnp.eye(d, dtype=A_batch.dtype)
-        M = I + learning_rate * A_batch
+        M = I + eta_eff * A_batch
         # M = I + discounting * A_batch
         
         def eig_branch(_):
