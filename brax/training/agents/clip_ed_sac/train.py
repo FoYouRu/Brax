@@ -1,17 +1,3 @@
-# Copyright 2025 The Brax Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Soft Actor-Critic training.
 
 See: https://arxiv.org/pdf/1812.05905.pdf
@@ -49,7 +35,6 @@ ReplayBufferState = Any
 
 _PMAP_AXIS_NAME = 'i'
 
-# ================================0112===================================
 def tree_l2norm(tree):
     leaves = jax.tree_util.tree_leaves(tree)
     sq = [jnp.sum(jnp.square(x)) for x in leaves]
@@ -57,7 +42,7 @@ def tree_l2norm(tree):
 
 def tree_sub(a, b):
     return jax.tree_util.tree_map(lambda x, y: x - y, a, b)
-# =====================================================================
+
 
 @flax.struct.dataclass
 class TrainingState:
@@ -163,20 +148,20 @@ def train(
         ] = None,
         checkpoint_logdir: Optional[str] = None,
         restore_checkpoint_path: Optional[str] = None,
-        # 추가: 불확실성 페널티를 위한 하이퍼파라미터
+  
         start_beta: float = 0.0,
         end_beta: float = 0.0,
         anneal_beta: float = 1e5,
-        # Reset 관련 인자 추가 ---
+
         reset_frequency: Optional[int] = None,
         reset_actor: bool = True,
         reset_critic: bool = True,
         reset_optimizer: bool = True,
-        # Clip 관련 인자 추가 ---
+        
         start_clip: float = -50,
         end_clip: float = 50,
         anneal_clip: float = 1e5,
-        # 
+        
         auto_clip: bool = True,
         tau_q_range: float = 0.01
 ):
@@ -200,17 +185,14 @@ def train(
     if max_replay_size is None:
         max_replay_size = num_timesteps
 
-    # The number of environment steps executed for every `actor_step()` call.
+
     env_steps_per_actor_step = action_repeat * num_envs
-    # equals to ceil(min_replay_size / env_steps_per_actor_step)
+
     num_prefill_actor_steps = -(-min_replay_size // num_envs)
     num_prefill_env_steps = num_prefill_actor_steps * env_steps_per_actor_step
     assert num_timesteps - num_prefill_env_steps >= 0
     num_evals_after_init = max(num_evals - 1, 1)
-    # The number of run_one_sac_epoch calls per run_sac_training.
-    # equals to
-    # ceil(num_timesteps - num_prefill_env_steps /
-    #      (num_evals_after_init * env_steps_per_actor_step))
+    
     num_training_steps_per_epoch = -(
             -(num_timesteps - num_prefill_env_steps)
             // (num_evals_after_init * env_steps_per_actor_step)
@@ -287,38 +269,12 @@ def train(
         dummy_data_sample=dummy_transition,
         sample_batch_size=batch_size * grad_updates_per_step // device_count,
     )
-# =================================0112 변경전======================================
-    # alpha_loss, critic_loss, actor_loss = sac_losses.make_losses(
-    #     sac_network=sac_network,
-    #     reward_scaling=reward_scaling,
-    #     discounting=discounting,
-    #     action_size=action_size,
-    #     # 추가: make_losses에 새로운 하이퍼파라미터 전달
-    #     start_beta = start_beta,
-    #     end_beta = end_beta,
-    #     anneal_beta = anneal_beta,
-    #     start_clip = start_clip,
-    #     end_clip = end_clip,
-    #     anneal_clip = anneal_clip,
-    #     auto_clip = auto_clip,
-    #     tau_q_range = tau_q_range,
-    # )
-    # alpha_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-    #     alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
-    # )
-    # critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-    #     critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True
-    # )
-    # actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-    #     actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
-    # )
-# ================================================밑에는 변경후=====================================================
+
     alpha_loss_fn, critic_loss_fn, actor_loss_fn = sac_losses.make_losses(
         sac_network=sac_network,
         reward_scaling=reward_scaling,
         discounting=discounting,
         action_size=action_size,
-        # 추가: make_losses에 새로운 하이퍼파라미터 전달
         start_beta = start_beta,
         end_beta = end_beta,
         anneal_beta = anneal_beta,
@@ -334,23 +290,14 @@ def train(
     actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         actor_loss_fn, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
-    # ====================================================================================
+
     def sgd_step(
             carry: Tuple[TrainingState, PRNGKey], transitions: Transition
     ) -> Tuple[Tuple[TrainingState, PRNGKey], Metrics]:
         training_state, key = carry
 
         key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
-# ================================원본0112=====================================
-        # alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
-        #     training_state.alpha_params,
-        #     training_state.policy_params,
-        #     training_state.normalizer_params,
-        #     transitions,
-        #     key_alpha,
-        #     optimizer_state=training_state.alpha_optimizer_state,
-        # )
- # =================위위에가 원본==========================================
+
         alpha_loss_val, alpha_params, alpha_optimizer_state = alpha_update(
             training_state.alpha_params,
             training_state.policy_params,
@@ -359,29 +306,9 @@ def train(
             key_alpha,
             optimizer_state=training_state.alpha_optimizer_state,
         )
-#====================================================================== 
-        # alpha = jnp.exp(training_state.alpha_params)  
-        alpha = jnp.exp(alpha_params)      #이것도 나중에 바꿔야함 0112 윗줄이 원본임 423줄도 주석해제해야함
-        # ================================원본0112=====================================
-        # (critic_loss, aux), q_params, q_optimizer_state = critic_update(
-        #     training_state.q_params,
-        #     training_state.policy_params,
-        #     training_state.normalizer_params,
-        #     training_state.target_q_params,
-        #     alpha,
-        #     transitions,
-        #     key_critic,
-        #     # additional variables
-        #     training_state.gradient_steps,
-        #     training_state.q_min,
-        #     training_state.q_max,
-        #     optimizer_state=training_state.q_optimizer_state,
-        # )
-        # new_q_min = aux['new_q_min']
-        # new_q_max = aux['new_q_max']
-        # A_batch = aux['A_batch']
-        # ============================================================================
-        # ================================0112========================================
+
+        alpha = jnp.exp(alpha_params)    
+
         # ----- critic loss + grads -----
         (critic_loss_val, aux), grads = jax.value_and_grad(critic_loss_fn, has_aux=True)(
             training_state.q_params,
@@ -396,7 +323,6 @@ def train(
             training_state.q_max,
         )
 
-        # pmap 환경에서 device 평균 (grads/aux/loss 모두)
         grads = jax.lax.pmean(grads, axis_name=_PMAP_AXIS_NAME)
         aux = jax.lax.pmean(aux, axis_name=_PMAP_AXIS_NAME)
         critic_loss_val = jax.lax.pmean(critic_loss_val, axis_name=_PMAP_AXIS_NAME)
@@ -420,16 +346,13 @@ def train(
         new_q_max = aux['new_q_max']
         A_batch = aux['A_batch']
         
-        # critic_loss = critic_loss_val
-        # ============================================================================
 
-        # ---- eig 계산 주기 설정 ----
+        # ---- eig  ----
         A_new = A_batch
         do_eig = ((training_state.gradient_steps.lo + 1) % eig_every) == 0
         
         d = A_batch.shape[0]
         I = jnp.eye(d, dtype=A_batch.dtype)
-        # M = I + eta_eff * A_batch
         M = I + 2* learning_rate * A_batch
         
         def eig_branch(_):
@@ -448,11 +371,9 @@ def train(
             operand=None)
         # --------------------------------
         actor_loss_val, policy_params, policy_optimizer_state = actor_update(
-        # actor_loss, policy_params, policy_optimizer_state = actor_update( 이게 원본임 0112
             training_state.policy_params,
             training_state.normalizer_params,
-            # training_state.q_params,
-            q_params,  #이것도 나중에 고쳐야함. 0112. 원본은 윗줄
+            q_params,  
             alpha,
             transitions,
             key_actor,
@@ -466,7 +387,7 @@ def train(
         )
 
         metrics = {
-            'critic_loss': critic_loss_val, #여기부터 밑에 val은 원본으로 돌릴때 지워야함 0112
+            'critic_loss': critic_loss_val, 
             'actor_loss': actor_loss_val,
             'alpha_loss': alpha_loss_val,
             'alpha': jnp.exp(alpha_params),
@@ -732,9 +653,9 @@ def train(
     training_walltime = time.time() - t
 
     current_step = 0
-    # --- [고칠 부분 시작]: 마지막 리셋 시점 추적 변수 추가 ---
+
     last_reset_grad_step = types.UInt64(hi=0, lo=0)
-    # --- [고칠 부분 끝]: 마지막 리셋 시점 추적 변수 추가 ---
+
     for _ in range(num_evals_after_init):
         logging.info('step %s', current_step)
 
@@ -748,7 +669,6 @@ def train(
         )
         current_step = int(_unpmap(training_state.env_steps))
 
-        # --- [고침]: 리셋 로직 ---
         current_grad_steps_uint64 = _unpmap(training_state.gradient_steps)
         current_grad_steps_int = int(current_grad_steps_uint64.lo)  # Convert UInt64 low part to int
         if (
@@ -756,12 +676,10 @@ def train(
                 and (current_grad_steps_uint64.lo - last_reset_grad_step.lo) >= reset_frequency
         ):
             logging.info(f'Resetting agent at {current_grad_steps_int} gradient steps...')
-            last_reset_grad_step = current_grad_steps_uint64  # 다음 리셋 기준 업데이트
+            last_reset_grad_step = current_grad_steps_uint64  
 
-            # 1. 새 키 생성 (호스트에서)
             local_key, key_policy_reset, key_q_reset = jax.random.split(local_key, 3)
 
-            # 2. 호스트에서 파라미터 및 옵티마이저 상태 재초기화
             host_state = _unpmap(training_state)
 
             new_policy_params = host_state.policy_params
@@ -784,7 +702,6 @@ def train(
                     logging.info('Resetting critic optimizer state...')
                     new_q_opt_state = q_optimizer.init(new_q_params)
 
-            # 3. 호스트에서 TrainingState 업데이트 (리셋된 값들로)
             host_state = host_state.replace(
                 policy_params=new_policy_params,
                 policy_optimizer_state=new_policy_opt_state,
@@ -793,13 +710,11 @@ def train(
                 target_q_params=new_target_q_params,
             )
 
-            # 4. 업데이트된 상태를 모든 장치에 다시 복제
             training_state = jax.device_put_replicated(
                 host_state, jax.local_devices()[:local_devices_to_use]
             )
-            pmap.assert_is_replicated(training_state)  # 복제 확인
+            pmap.assert_is_replicated(training_state) 
             logging.info('Agent reset complete.')
-        # --- [고칠 부분 끝]: 리셋 로직 ---
 
         # Eval and logging
         if process_id == 0:
