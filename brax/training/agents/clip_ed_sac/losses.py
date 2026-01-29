@@ -18,7 +18,7 @@ See: https://arxiv.org/pdf/1812.05905.pdf
 """
 
 from typing import Any
-from brax.training.acme import running_statistics  # 추가
+from brax.training.acme import running_statistics
 from brax.training import types
 from brax.training.agents.clip_ed_sac import networks as sac_networks
 from brax.training.types import Params
@@ -28,8 +28,6 @@ import jax.numpy as jnp
 
 Transition = types.Transition
 
-
-# 추가: 선형 스케줄링 헬퍼 함수
 def linear_schedule(current_step, start_value, end_value, total_steps):
     fraction = jnp.clip(current_step.lo.astype(jnp.float32) / total_steps, 0.0, 1.0)
     return start_value - fraction * (start_value - end_value)
@@ -61,11 +59,9 @@ def _compute_phi(
                if k.startswith("hidden") or k.startswith("Dense")]
     if not h0_keys:
         raise KeyError(f"hidden_*/Dense_* not found in q_params['params']['{mlp_key}']: got keys={list(mlp.keys())}")
-    
-    # 첫번째 레이어 =====================
+
     h0_key = h0_keys[0]
     layer0 = mlp[h0_key]
-    # ==================================
 
     w = layer0["kernel"]
     b = layer0["bias"]
@@ -83,7 +79,6 @@ def _compute_phi(
 #     obs_norm = running_statistics.normalize(observations, normalizer_params)
 #     h = jnp.concatenate([obs_norm, actions], axis=-1)
 
-#     # 1) root 찾기
 #     root = q_params["params"]
 
 #     mlp_keys = [k for k in root.keys() if k.startswith("MLP")]
@@ -104,7 +99,6 @@ def _compute_phi(
 #     z0 = h @ W0 + b0             # preactivation 0
 #     a0 = jax.nn.relu(z0)         # activation
 
-#     # --- hidden_1 (우리가 원하는 φ) ---
 #     layer1 = mlp['hidden_1']
 #     W1 = layer1['kernel']
 #     b1 = layer1['bias']
